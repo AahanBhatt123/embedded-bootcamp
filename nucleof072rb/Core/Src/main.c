@@ -19,6 +19,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "spi.h"
+#include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -34,6 +36,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+#define MIN_ON_COUNT	3200
+#define MAX_ADC_VALUE	1023
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -44,6 +50,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+
 
 /* USER CODE END PV */
 
@@ -64,7 +71,11 @@ void SystemClock_Config(void);
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
+
+	uint8_t TxData[3] = {0b00000001,0b10000000,0b00000000};
+	uint8_t RxData[3] = {0, 0, 0};
 
   /* USER CODE END 1 */
 
@@ -87,7 +98,13 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
+  MX_SPI1_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
+
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, GPIO_PIN_SET);
+
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
   /* USER CODE END 2 */
 
@@ -95,6 +112,31 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  //Step 1: ADC communication
+
+
+	  //Set CS to low to begin communication
+	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, GPIO_PIN_RESET);
+
+	  HAL_SPI_TransmitReceive(&hspi1, TxData, RxData, 3, HAL_MAX_DELAY);
+
+	  //Pull high again once communication ends
+
+	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, GPIO_PIN_SET);
+
+	  //Step 2: Convert ADC data to PWM Signal
+
+	  //First, extract useful bits from received buffer, will vary between 0 and 1023
+	  uint16_t adcRx_Value = (((RxData[1] & 0b00000011) << 8) | RxData[2]);
+
+	  //Need to have on period of either 3200 or 6400, so relate these values with adcRx_Value
+
+	  uint32_t On_Count = MIN_ON_COUNT + ((adcRx_Value*MIN_ON_COUNT)/MAX_ADC_VALUE);
+
+	  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,On_Count);
+
+	  HAL_Delay(10);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -122,6 +164,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+
   /** Initializes the CPU, AHB and APB buses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
@@ -177,5 +220,3 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
-
-/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
